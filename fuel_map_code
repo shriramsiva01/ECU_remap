@@ -1,0 +1,128 @@
+#Fuel map data is typically a multidimensional table (lookup table) that correlates engine parameters like RPM and manifold pressure with outputs such as fuel injection timing or air-fuel ratios.
+In Python or C++, the conversion process involves reading the data (e.g., from a CSV or binary file), structuring it as an array or matrix, and then interpolating values to calculate real-time outputs.
+
+# Typical Fuel Map Structure
+Axis 1 (X): Engine RPM
+Axis 2 (Y): Manifold Absolute Pressure (MAP) or Throttle Position
+Values (Z): Fuel injection time or air-fuel ratio (AFR)
+This can be represented as a 2D table where each cell is a value corresponding to specific RPM and MAP pairs.
+-----------------------------------------------------------------------------------------------
+1) Reading fuelmap data(py):
+
+'''
+import numpy as np
+import pandas as pd
+
+# Load fuel map from a CSV file
+fuel_map = pd.read_csv("fuel_map.csv")
+
+# Convert to NumPy array for efficient computation
+fuel_map_array = fuel_map.to_numpy()
+
+# Extract RPM and MAP axes and values
+rpm = fuel_map_array[0, 1:]  # First row (excluding first column) as RPM axis
+map_values = fuel_map_array[1:, 0]  # First column (excluding first row) as MAP axis
+fuel_values = fuel_map_array[1:, 1:]  # Remaining grid as fuel values
+'''
+#---------------------------------------------------------------------------------------------------
+Reading fuelmap data(C++):
+'''
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <sstream>
+
+int main() {
+    std::ifstream file("fuel_map.csv");
+    std::string line;
+    std::vector<std::vector<float>> fuel_map;
+
+    // Parse CSV
+    while (std::getline(file, line)) {
+        std::stringstream ss(line);
+        std::string value;
+        std::vector<float> row;
+
+        while (std::getline(ss, value, ',')) {
+            row.push_back(std::stof(value));
+        }
+        fuel_map.push_back(row);
+    }
+
+    // Separate axes and values
+    std::vector<float> rpm = fuel_map[0]; // First row as RPM axis
+    std::vector<float> map_values;
+    for (size_t i = 1; i < fuel_map.size(); ++i) {
+        map_values.push_back(fuel_map[i][0]); // First column as MAP axis
+    }
+
+    // Fuel values grid
+    std::vector<std::vector<float>> fuel_values(fuel_map.begin() + 1, fuel_map.end());
+
+    file.close();
+    return 0;
+}
+'''
+-------------------------------------------------------------------------------------------------------
+2)Interpolating for Real-Time Outputs
+In py:
+
+'''
+from scipy.interpolate import interp2d
+
+# Create interpolation function
+interp_func = interp2d(rpm, map_values, fuel_values, kind="linear")
+
+# Example: Get fuel value for RPM=2500 and MAP=0.5
+rpm_input = 2500
+map_input = 0.5
+fuel_value = interp_func(rpm_input, map_input)[0]
+
+print(f"Fuel value: {fuel_value}")
+
+'''
+
+In c++:
+
+'''
+float interpolate(float x, float x1, float x2, float y1, float y2) {
+    return y1 + (x - x1) * (y2 - y1) / (x2 - x1);
+}
+
+// Bilinear interpolation for fuel maps
+float bilinearInterpolation(float rpm, float map, 
+                            const std::vector<float>& rpm_axis, 
+                            const std::vector<float>& map_axis, 
+                            const std::vector<std::vector<float>>& fuel_values) {
+    // Find bounding indices
+    auto rpm_it = std::lower_bound(rpm_axis.begin(), rpm_axis.end(), rpm);
+    auto map_it = std::lower_bound(map_axis.begin(), map_axis.end(), map);
+
+    int rpm_idx = std::distance(rpm_axis.begin(), rpm_it) - 1;
+    int map_idx = std::distance(map_axis.begin(), map_it) - 1;
+
+    // Corner points
+    float q11 = fuel_values[map_idx][rpm_idx];
+    float q12 = fuel_values[map_idx + 1][rpm_idx];
+    float q21 = fuel_values[map_idx][rpm_idx + 1];
+    float q22 = fuel_values[map_idx + 1][rpm_idx + 1];
+
+    // Interpolations
+    float interp1 = interpolate(map, map_axis[map_idx], map_axis[map_idx + 1], q11, q12);
+    float interp2 = interpolate(map, map_axis[map_idx], map_axis[map_idx + 1], q21, q22);
+    return interpolate(rpm, rpm_axis[rpm_idx], rpm_axis[rpm_idx + 1], interp1, interp2);
+}
+
+'''
+-------------------------------------------------------------------------------------------
+3)Visualization (Optional in Python):
+'''
+import matplotlib.pyplot as plt
+
+plt.contourf(rpm, map_values, fuel_values, cmap="viridis")
+plt.colorbar(label="Fuel Injection Timing (ms)")
+plt.xlabel("Engine RPM")
+plt.ylabel("MAP (kPa)")
+plt.title("Fuel Map")
+plt.show()
+'''
